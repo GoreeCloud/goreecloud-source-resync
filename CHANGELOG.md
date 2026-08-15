@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- GitHub Actions validation for manifest integrity, JavaScript syntax, required repository files, common reusable-secret patterns, and validation-XPI archive integrity.
+- GitHub Actions packaging workflow for manual runs and semantic-version tags.
+- Version consistency enforcement between release tags and `manifest.json`.
+- Reproducible-oriented XPI and source archive creation with SHA-256 checksums.
+- Thirty-day retention of packaged workflow artifacts.
+
 ## 1.0.0 — 2026-08-15
 
 First stable GoreeCloud release after successful manual and five-minute automatic resync validation against the GoreeCloud ChatGPT Project Sources page.
