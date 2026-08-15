@@ -20,6 +20,33 @@ Validated on August 15, 2026 against the GoreeCloud ChatGPT Project Sources page
 - Show last-run mode, count, duration, failures, timestamp, and next scheduled run.
 - Retain a bounded local history of the 10 most recent runs.
 
+## Continuous integration
+
+GitHub Actions validates the extension on pushes and pull requests by:
+
+- parsing and checking `manifest.json`;
+- enforcing the expected Firefox extension identity and semantic version format;
+- checking JavaScript syntax with Node.js;
+- confirming required source, UI, documentation, and icon files exist;
+- scanning the repository for several common reusable-secret patterns;
+- creating and testing a validation XPI archive.
+
+The validation workflow uses read-only repository permissions.
+
+## Release packaging
+
+The packaging workflow can be started manually or by pushing a semantic-version tag such as `v1.0.0`.
+
+For tagged builds, the workflow requires the Git tag version to match the version in `manifest.json`. It then creates:
+
+- `goreecloud-source-resync-vVERSION.xpi`;
+- `goreecloud-source-resync-vVERSION-source.tar.gz`;
+- `SHA256SUMS`.
+
+The XPI and source archive are built with normalized file timestamps and archive metadata where supported to improve reproducibility. The resulting files are retained as GitHub Actions artifacts for 30 days.
+
+The workflow packages an **unsigned** XPI. Firefox Add-ons signing remains a separate release step when persistent installation in standard Firefox builds is required.
+
 ## Firefox permissions
 
 - `alarms`: schedules automatic runs.
