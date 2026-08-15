@@ -1,0 +1,83 @@
+name: Package Firefox Extension
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build Firefox XPI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Read manifest version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(python3 -c "import json; print(json.load(open('manifest.json', encoding='utf-8'))['version'])")"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid manifest version: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Require tag and manifest versions to match
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag version $TAG_VERSION does not match manifest version ${{ steps.version.outputs.version }}." >&2
+            exit 1
+          fi
+
+      - name: Validate source before packaging
+        run: |
+          python3 -m json.tool manifest.json >/dev/null
+          node --check background.js
+          node --check content.js
+          node --check popup.js
+          test -f icons/icon-48.png
+          test -f icons/icon-96.png
+
+      - name: Build XPI and source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist source-package
+
+          cp manifest.json background.js content.js content.css popup.html popup.css popup.js source-package/
+          cp README.md SECURITY.md CHANGELOG.md LICENSE source-package/
+          cp -R icons source-package/icons
+
+          (
+            cd source-package
+            find . -type f -print0 | sort -z | xargs -0 touch -d '@0'
+            zip -X -r -q "../dist/goreecloud-source-resync-v${VERSION}.xpi" .
+          )
+
+          tar --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 --group=0 --numeric-owner \
+            -czf "dist/goreecloud-source-resync-v${VERSION}-source.tar.gz" \
+            -C source-package .
+
+          unzip -t "dist/goreecloud-source-resync-v${VERSION}.xpi"
+          sha256sum dist/* > dist/SHA256SUMS
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: goreecloud-source-resync-v${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
