@@ -1,6 +1,8 @@
 (() => {
   const STATE = { running: false, floatingButton: null };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const SOURCE_READY_TIMEOUT_MS = 45000;
+  const SOURCE_STABLE_POLLS = 3;
 
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
@@ -45,6 +47,31 @@
       cards.push({ card, name });
     }
     return cards;
+  }
+
+  async function waitForSourceCards(timeoutMs = SOURCE_READY_TIMEOUT_MS) {
+    const startedAt = Date.now();
+    let lastCount = -1;
+    let stablePolls = 0;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      if (!isSourcesPage()) return [];
+
+      const cards = findSourceCards();
+      const count = cards.length;
+
+      if (count > 0 && count === lastCount) {
+        stablePolls += 1;
+        if (stablePolls >= SOURCE_STABLE_POLLS) return cards;
+      } else {
+        stablePolls = count > 0 ? 1 : 0;
+        lastCount = count;
+      }
+
+      await sleep(500);
+    }
+
+    return findSourceCards();
   }
 
   function menuButtonForCard(card) {
@@ -96,9 +123,17 @@
     const failures = [];
     let count = 0;
     try {
-      const initial = findSourceCards();
+      const initial = await waitForSourceCards();
       const names = initial.map(item => item.name);
-      if (!names.length) return { ok: false, count: 0, total: 0, failures: [], message: "No Google Drive sources were found on this page." };
+      if (!names.length) {
+        return {
+          ok: false,
+          count: 0,
+          total: 0,
+          failures: [],
+          message: "The Sources page loaded, but Google Drive sources did not finish rendering within 45 seconds."
+        };
+      }
 
       for (let index = 0; index < names.length; index += 1) {
         const sourceName = names[index];
