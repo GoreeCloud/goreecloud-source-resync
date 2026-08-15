@@ -8,6 +8,11 @@
 - Version consistency enforcement between release tags and `manifest.json`.
 - Reproducible-oriented XPI and source archive creation with SHA-256 checksums.
 - Thirty-day retention of packaged workflow artifacts.
+- Direct attachment of the packaged XPI, source archive, and `SHA256SUMS` to an existing GitHub Release.
+- Manual repackaging of an existing semantic-version release tag, using that exact tag as the package source.
+
+### Changed
+- The packaging workflow now uses GitHub's short-lived workflow token with `contents: write` only for release-asset publication and replaces same-name release assets during a controlled retry.
 
 ## 1.0.0 — 2026-08-15
 
