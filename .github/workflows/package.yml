@@ -2,12 +2,17 @@ name: Package Firefox Extension
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing semantic-version release tag to package and update, for example v1.0.0
+        required: false
+        type: string
   push:
     tags:
       - 'v*.*.*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
@@ -15,8 +20,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Resolve source ref and release tag
+        id: release
+        shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            SOURCE_REF="$GITHUB_REF_NAME"
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          elif [ -n "${DISPATCH_TAG:-}" ]; then
+            SOURCE_REF="$DISPATCH_TAG"
+            RELEASE_TAG="$DISPATCH_TAG"
+          else
+            SOURCE_REF="$GITHUB_SHA"
+            RELEASE_TAG=""
+          fi
+
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out package source
         uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.release.outputs.source_ref }}
 
       - name: Read manifest version
         id: version
@@ -29,11 +57,12 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Require tag and manifest versions to match
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Require release tag and manifest versions to match
+        if: steps.release.outputs.release_tag != ''
         shell: bash
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${{ steps.release.outputs.release_tag }}"
+          TAG_VERSION="${TAG_VERSION#v}"
           if [ "$TAG_VERSION" != "${{ steps.version.outputs.version }}" ]; then
             echo "Tag version $TAG_VERSION does not match manifest version ${{ steps.version.outputs.version }}." >&2
             exit 1
@@ -74,10 +103,26 @@ jobs:
           unzip -t "dist/goreecloud-source-resync-v${VERSION}.xpi"
           sha256sum dist/* > dist/SHA256SUMS
 
-      - name: Upload packaged artifacts
+      - name: Upload packaged workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: goreecloud-source-resync-v${{ steps.version.outputs.version }}
           path: dist/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Attach files to GitHub Release
+        if: steps.release.outputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" \
+            dist/goreecloud-source-resync-v${{ steps.version.outputs.version }}.xpi \
+            dist/goreecloud-source-resync-v${{ steps.version.outputs.version }}-source.tar.gz \
+            dist/SHA256SUMS \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"

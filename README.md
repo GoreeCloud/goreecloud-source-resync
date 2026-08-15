@@ -35,15 +35,17 @@ The validation workflow uses read-only repository permissions.
 
 ## Release packaging
 
-The packaging workflow can be started manually or by pushing a semantic-version tag such as `v1.0.0`.
+The packaging workflow runs for semantic-version tags such as `v1.0.0` and can also be started manually for an existing release tag.
 
-For tagged builds, the workflow requires the Git tag version to match the version in `manifest.json`. It then creates:
+For release builds, the workflow checks out the exact requested tag, requires the tag version to match `manifest.json`, and creates:
 
 - `goreecloud-source-resync-vVERSION.xpi`;
 - `goreecloud-source-resync-vVERSION-source.tar.gz`;
 - `SHA256SUMS`.
 
-The XPI and source archive are built with normalized file timestamps and archive metadata where supported to improve reproducibility. The resulting files are retained as GitHub Actions artifacts for 30 days.
+The XPI and source archive are built with normalized file timestamps and archive metadata where supported to improve reproducibility. The resulting files are retained as GitHub Actions artifacts for 30 days and, when an existing release tag is supplied, are also attached directly to that GitHub Release. Existing release files with the same names are replaced so a packaging retry can repair or republish assets without creating duplicate filenames.
+
+The packaging workflow receives only the repository permission required to attach release assets. No reusable repository secret is required; GitHub's short-lived workflow token is used for the release upload.
 
 The workflow packages an **unsigned** XPI. Firefox Add-ons signing remains a separate release step when persistent installation in standard Firefox builds is required.
 
