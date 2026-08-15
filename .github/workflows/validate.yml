@@ -1,0 +1,94 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+      - 'agent/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate extension source
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate manifest JSON
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('manifest.json').read_text(encoding='utf-8'))
+          required = {
+              'manifest_version': 3,
+              'name': 'GoreeCloud Source Resync',
+          }
+          for key, expected in required.items():
+              actual = manifest.get(key)
+              if actual != expected:
+                  raise SystemExit(f'{key}: expected {expected!r}, got {actual!r}')
+
+          version = manifest.get('version', '')
+          parts = version.split('.')
+          if len(parts) != 3 or not all(part.isdigit() for part in parts):
+              raise SystemExit(f'Invalid semantic version: {version!r}')
+
+          gecko_id = manifest.get('browser_specific_settings', {}).get('gecko', {}).get('id')
+          if gecko_id != 'source-resync@goreecloud.com':
+              raise SystemExit(f'Unexpected Firefox extension ID: {gecko_id!r}')
+          PY
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check background.js
+          node --check content.js
+          node --check popup.js
+
+      - name: Validate required files
+        run: |
+          test -f manifest.json
+          test -f background.js
+          test -f content.js
+          test -f content.css
+          test -f popup.html
+          test -f popup.css
+          test -f popup.js
+          test -f icons/icon-48.png
+          test -f icons/icon-96.png
+          test -f README.md
+          test -f SECURITY.md
+          test -f CHANGELOG.md
+          test -f LICENSE
+
+      - name: Guard against common secret material
+        run: |
+          if grep -RInE --exclude-dir=.git --exclude='*.png' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,}|sk-[0-9A-Za-z]{20,})' .; then
+            echo 'Potential reusable secret material found.' >&2
+            exit 1
+          fi
+
+      - name: Build validation XPI
+        run: |
+          mkdir -p dist
+          zip -r -q dist/goreecloud-source-resync-validation.xpi \
+            manifest.json \
+            background.js \
+            content.js \
+            content.css \
+            popup.html \
+            popup.css \
+            popup.js \
+            icons \
+            README.md \
+            SECURITY.md \
+            CHANGELOG.md \
+            LICENSE
+          unzip -t dist/goreecloud-source-resync-validation.xpi
