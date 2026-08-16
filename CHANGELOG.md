@@ -14,6 +14,20 @@
 ### Changed
 - The packaging workflow now uses GitHub's short-lived workflow token with `contents: write` only for release-asset publication and replaces same-name release assets during a controlled retry.
 
+## 1.1.2 — 2026-08-16
+
+Improved manual-run state reporting so the controls clearly show request progress and return to idle as soon as the request pass is complete.
+
+### Changed
+- The popup now polls transient background runtime state while it is open instead of relying only on the lifetime of the original click message.
+- The popup button now shows bounded progress such as **Resyncing 7/18…** while requests are being issued.
+- The in-page floating control now shows the same bounded request progress.
+- The in-page control now routes manual runs through the background runtime so popup runs and page-button runs share the same overlap protection, result recording, and last-run history.
+
+### Reliability
+- Progress is maintained only in background memory and is not persisted as additional extension history.
+- Both controls return to their idle labels after the request pass completes; ChatGPT may continue showing individual sources as **Syncing** afterward while it finishes the server-side refresh.
+
 ## 1.1.1 — 2026-08-15
 
 Corrected a manual-resync regression introduced while experimenting with inactive-tab support.
