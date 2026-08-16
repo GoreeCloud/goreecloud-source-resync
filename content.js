@@ -88,6 +88,15 @@
     throw new Error("The source menu opened, but no Resync action was found.");
   }
 
+  function reportProgress(current, total, source = "") {
+    browser.runtime.sendMessage({
+      type: "GOREECLOUD_RUN_PROGRESS",
+      current,
+      total,
+      source
+    }).catch(() => {});
+  }
+
   async function resyncAll() {
     if (STATE.running) return { ok: false, count: 0, total: 0, failures: [], message: "A resync run is already in progress." };
     STATE.running = true;
@@ -100,12 +109,20 @@
       const names = initial.map(item => item.name);
       if (!names.length) return { ok: false, count: 0, total: 0, failures: [], message: "No Google Drive sources were found on this page." };
 
+      updateFloatingButton("running", { current: 0, total: names.length });
+      reportProgress(0, names.length);
+
       for (let index = 0; index < names.length; index += 1) {
         const sourceName = names[index];
+        reportProgress(index, names.length, sourceName);
+        updateFloatingButton("running", { current: index, total: names.length });
+
         const current = findSourceCards();
         const target = current.find(item => item.name === sourceName) || current[index];
         if (!target?.card) {
           failures.push({ source: sourceName, error: "Source card could not be found after the page updated." });
+          reportProgress(index + 1, names.length, sourceName);
+          updateFloatingButton("running", { current: index + 1, total: names.length });
           continue;
         }
         try {
@@ -114,6 +131,9 @@
         } catch (error) {
           failures.push({ source: sourceName, error: error?.message || String(error) });
         }
+
+        reportProgress(index + 1, names.length, sourceName);
+        updateFloatingButton("running", { current: index + 1, total: names.length });
         await sleep(225);
       }
 
@@ -133,12 +153,19 @@
     }
   }
 
-  function updateFloatingButton(state) {
+  function updateFloatingButton(state, progress = null) {
     const button = STATE.floatingButton;
     if (!button) return;
     button.disabled = state === "running";
     button.dataset.state = state;
-    button.querySelector("span:last-child").textContent = state === "running" ? "Resyncing…" : "Resync all";
+
+    let label = "Resync all";
+    if (state === "running") {
+      label = progress?.total
+        ? `Resyncing ${Math.min(progress.current || 0, progress.total)}/${progress.total}…`
+        : "Resyncing…";
+    }
+    button.querySelector("span:last-child").textContent = label;
   }
 
   function mountFloatingButton() {
@@ -155,8 +182,17 @@
     button.setAttribute("aria-label", "Resync all Google Drive project sources");
     button.innerHTML = `<span class="gc-resync-icon" aria-hidden="true">↻</span><span>Resync all</span>`;
     button.addEventListener("click", async () => {
-      const result = await resyncAll();
-      showToast(result.message, result.failures.length ? "warning" : result.ok ? "success" : "warning");
+      let result;
+      try {
+        result = await browser.runtime.sendMessage({ type: "GOREECLOUD_RUN_NOW" });
+      } catch (error) {
+        result = {
+          ok: false,
+          failures: [],
+          message: error?.message || String(error)
+        };
+      }
+      showToast(result?.message || "Run failed.", result?.failures?.length ? "warning" : result?.ok ? "success" : "warning");
     });
     document.body.appendChild(button);
     STATE.floatingButton = button;

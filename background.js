@@ -5,6 +5,7 @@ const DEFAULTS = {
 };
 
 let runInProgress = false;
+let runProgress = null;
 
 async function getSettings() {
   return { ...DEFAULTS, ...(await browser.storage.local.get(DEFAULTS)) };
@@ -19,6 +20,16 @@ function validSourcesUrl(url) {
   } catch {
     return false;
   }
+}
+
+function normalizeProgress(message) {
+  const current = Number.isFinite(message?.current) ? Math.max(0, message.current) : 0;
+  const total = Number.isFinite(message?.total) ? Math.max(0, message.total) : 0;
+  return {
+    current: total ? Math.min(current, total) : current,
+    total,
+    source: typeof message?.source === "string" ? message.source : ""
+  };
 }
 
 async function recordResult(result) {
@@ -47,6 +58,7 @@ async function sendResync(tabId) {
   }
 
   runInProgress = true;
+  runProgress = { current: 0, total: 0, source: "" };
   const startedAt = Date.now();
   try {
     const response = await browser.tabs.sendMessage(tabId, {
@@ -80,6 +92,7 @@ async function sendResync(tabId) {
     return result;
   } finally {
     runInProgress = false;
+    runProgress = null;
   }
 }
 
@@ -87,6 +100,7 @@ async function getRuntimeStatus() {
   return {
     ok: true,
     running: runInProgress,
+    progress: runProgress,
     settings: await getSettings()
   };
 }
@@ -106,6 +120,11 @@ browser.runtime.onInstalled.addListener(async () => {
 browser.runtime.onMessage.addListener(async message => {
   if (message?.type === "GOREECLOUD_GET_STATUS") {
     return getRuntimeStatus();
+  }
+
+  if (message?.type === "GOREECLOUD_RUN_PROGRESS") {
+    if (runInProgress) runProgress = normalizeProgress(message);
+    return { ok: true };
   }
 
   if (message?.type === "GOREECLOUD_RUN_NOW") {
