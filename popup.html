@@ -12,51 +12,25 @@
       <div class="mark" aria-hidden="true">↻</div>
       <div>
         <h1>Source Resync</h1>
-        <p>ChatGPT Project source refresh control</p>
+        <p>Manual ChatGPT Project source refresh</p>
       </div>
     </header>
 
     <section class="card action-card">
       <button id="runNow" class="primary" type="button">Resync all now</button>
-      <button id="captureUrl" class="secondary" type="button">Use current Sources page</button>
-      <p id="projectUrl" class="muted truncate">No Sources page saved.</p>
-    </section>
-
-    <section class="card">
-      <div class="row split">
-        <div>
-          <label for="enabled">Automatic resync</label>
-          <p class="muted">Run on a repeating Firefox alarm.</p>
-        </div>
-        <label class="switch"><input id="enabled" type="checkbox"><span></span></label>
-      </div>
-
-      <label class="field" for="intervalMinutes">
-        <span>Interval</span>
-        <select id="intervalMinutes">
-          <option value="5">Every 5 minutes</option>
-          <option value="10">Every 10 minutes</option>
-          <option value="15">Every 15 minutes</option>
-          <option value="30">Every 30 minutes</option>
-          <option value="60">Every hour</option>
-        </select>
-      </label>
-
-      <label class="check"><input id="openTabWhenNeeded" type="checkbox"> <span>Open the saved Sources page in a background tab when needed</span></label>
-      <label class="check"><input id="closeAutoOpenedTab" type="checkbox"> <span>Close a tab that the extension opened automatically</span></label>
+      <p class="muted">Open the ChatGPT Project Sources page you want to refresh, then use this button.</p>
     </section>
 
     <section class="card status-card" aria-live="polite">
-      <div class="eyebrow">Last run</div>
+      <div class="eyebrow">Last manual run</div>
       <div id="status">Not run yet.</div>
       <div id="runDetails" class="details"></div>
       <div id="lastRunAt" class="muted"></div>
-      <div id="nextRunAt" class="muted"></div>
     </section>
 
     <footer>
       <span>GoreeCloud · Glaze UI</span>
-      <span id="version">v1.0.0</span>
+      <span id="version">v1.1.0</span>
     </footer>
   </main>
   <script src="popup.js"></script>
