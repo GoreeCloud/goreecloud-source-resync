@@ -77,6 +77,51 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
+async function getSourceStatus(tabId) {
+  try {
+    return await browser.tabs.sendMessage(tabId, { type: "GOREECLOUD_SOURCE_STATUS" });
+  } catch {
+    return null;
+  }
+}
+
+async function warmSourceTab(tab) {
+  if (!tab?.id) return;
+
+  const initial = await getSourceStatus(tab.id);
+  if (initial?.count > 0) return;
+
+  const [previousActive] = await browser.tabs.query({ active: true, currentWindow: true });
+  const shouldRestore = previousActive?.id && previousActive.id !== tab.id;
+
+  if (shouldRestore) {
+    await browser.tabs.update(tab.id, { active: true });
+  }
+
+  try {
+    const deadline = Date.now() + 8000;
+    let stableCount = 0;
+    let lastCount = -1;
+
+    while (Date.now() < deadline) {
+      const status = await getSourceStatus(tab.id);
+      const count = status?.count || 0;
+      if (count > 0 && count === lastCount) {
+        stableCount += 1;
+        if (stableCount >= 2) return;
+      } else {
+        stableCount = count > 0 ? 1 : 0;
+        lastCount = count;
+      }
+      await sleep(500);
+    }
+  } finally {
+    if (shouldRestore) {
+      await browser.tabs.update(previousActive.id, { active: true }).catch(() => {});
+    }
+  }
+}
+
 async function sendResync(tabId, reason = "manual") {
   if (runInProgress) {
     return {
@@ -147,7 +192,7 @@ async function runScheduledResync() {
       tab = await browser.tabs.create({ url: settings.projectUrl, active: false });
       autoOpened = true;
       await waitForTabComplete(tab.id);
-      await sleep(2500);
+      await sleep(1000);
     }
 
     if (!tab) {
@@ -163,6 +208,7 @@ async function runScheduledResync() {
       return;
     }
 
+    await warmSourceTab(tab);
     await sendResync(tab.id, "scheduled");
   } catch (error) {
     await recordResult({

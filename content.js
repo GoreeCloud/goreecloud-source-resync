@@ -11,6 +11,13 @@
     return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
   }
 
+  function isUsableElement(el) {
+    if (!(el instanceof Element)) return false;
+    if (el.hidden || el.getAttribute("aria-hidden") === "true") return false;
+    const style = getComputedStyle(el);
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+
   function isSourcesPage() {
     const url = new URL(location.href);
     return url.origin === "https://chatgpt.com"
@@ -20,17 +27,17 @@
 
   function sourceMarkerElements() {
     return [...document.querySelectorAll("body *")].filter(el => {
-      if (!isVisible(el) || el.children.length > 3) return false;
+      if (!isUsableElement(el) || el.children.length > 3) return false;
       return /Google Drive (Folder|File)/i.test((el.textContent || "").trim());
     });
   }
 
   function findCardFromMarker(marker) {
     let node = marker;
-    for (let depth = 0; depth < 8 && node; depth += 1, node = node.parentElement) {
-      const rect = node.getBoundingClientRect();
-      const buttons = [...node.querySelectorAll("button")].filter(isVisible);
-      if (rect.width > 300 && rect.height >= 35 && rect.height <= 160 && buttons.length > 0) return node;
+    for (let depth = 0; depth < 10 && node; depth += 1, node = node.parentElement) {
+      const buttons = [...node.querySelectorAll("button")].filter(isUsableElement);
+      const text = (node.textContent || "").trim();
+      if (buttons.length > 0 && /Google Drive (Folder|File)/i.test(text)) return node;
     }
     return null;
   }
@@ -42,7 +49,8 @@
       const card = findCardFromMarker(marker);
       if (!card || seen.has(card)) continue;
       seen.add(card);
-      const lines = (card.innerText || "").split("\n").map(v => v.trim()).filter(Boolean);
+      const rawText = card.innerText || card.textContent || "";
+      const lines = rawText.split("\n").map(v => v.trim()).filter(Boolean);
       const name = lines.find(v => !/^Google Drive (Folder|File)/i.test(v) && !/^Last synced/i.test(v) && v !== "Syncing") || "Google Drive source";
       cards.push({ card, name });
     }
@@ -75,7 +83,7 @@
   }
 
   function menuButtonForCard(card) {
-    const buttons = [...card.querySelectorAll("button")].filter(isVisible);
+    const buttons = [...card.querySelectorAll("button")].filter(isUsableElement);
     const scored = buttons.map(button => {
       const aria = (button.getAttribute("aria-label") || "").toLowerCase();
       const title = (button.getAttribute("title") || "").toLowerCase();
@@ -83,16 +91,15 @@
       let score = 0;
       if (/more|menu|options|actions/.test(`${aria} ${title}`)) score += 5;
       if (text === "…" || text === "⋯" || text === "...") score += 4;
-      const rect = button.getBoundingClientRect();
-      if (rect.width <= 48 && rect.height <= 48) score += 1;
+      if (isVisible(button)) score += 1;
       return { button, score };
     }).sort((a, b) => b.score - a.score);
     return scored[0]?.button || buttons.at(-1) || null;
   }
 
-  function visibleResyncControl() {
+  function resyncControl() {
     const selectors = ["[role='menuitem']", "[role='option']", "button", "a", "div[tabindex='0']"];
-    const candidates = [...document.querySelectorAll(selectors.join(","))].filter(isVisible);
+    const candidates = [...document.querySelectorAll(selectors.join(","))].filter(isUsableElement);
     return candidates.find(el => /^resync$/i.test((el.textContent || "").trim())) || null;
   }
 
@@ -101,9 +108,9 @@
     if (!menuButton) throw new Error("Could not find the source menu button.");
 
     menuButton.click();
-    for (let i = 0; i < 24; i += 1) {
-      await sleep(100);
-      const resync = visibleResyncControl();
+    for (let i = 0; i < 30; i += 1) {
+      await sleep(125);
+      const resync = resyncControl();
       if (resync) {
         resync.click();
         await sleep(300);
@@ -208,6 +215,9 @@
   }
 
   browser.runtime.onMessage.addListener(async message => {
+    if (message?.type === "GOREECLOUD_SOURCE_STATUS") {
+      return { ok: true, isSourcesPage: isSourcesPage(), count: findSourceCards().length, hidden: document.hidden };
+    }
     if (message?.type === "GOREECLOUD_RESYNC_ALL") {
       if (!isSourcesPage()) return { ok: false, count: 0, total: 0, failures: [], message: "The active ChatGPT page is not a Project Sources page." };
       return resyncAll();
