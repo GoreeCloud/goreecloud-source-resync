@@ -5,6 +5,8 @@ const DEFAULTS = {
 };
 
 const $ = id => document.getElementById(id);
+let requestPending = false;
+let statusPoll = null;
 
 function render(settings) {
   $("version").textContent = `v${browser.runtime.getManifest().version}`;
@@ -28,15 +30,45 @@ function render(settings) {
     : "";
 }
 
+function renderRunButton(runtimeStatus = null) {
+  const button = $("runNow");
+  const running = Boolean(requestPending || runtimeStatus?.running);
+  button.disabled = running;
+
+  if (!running) {
+    button.textContent = "Resync all now";
+    return;
+  }
+
+  const progress = runtimeStatus?.progress;
+  button.textContent = progress?.total
+    ? `Resyncing ${Math.min(progress.current || 0, progress.total)}/${progress.total}…`
+    : "Resyncing…";
+}
+
 async function load() {
   const settings = { ...DEFAULTS, ...(await browser.storage.local.get(DEFAULTS)) };
   render(settings);
 }
 
+async function refreshRuntimeStatus() {
+  try {
+    const status = await browser.runtime.sendMessage({ type: "GOREECLOUD_GET_STATUS" });
+    renderRunButton(status);
+  } catch {
+    if (!requestPending) renderRunButton({ running: false });
+  }
+}
+
+function startStatusPolling() {
+  if (statusPoll) return;
+  statusPoll = setInterval(refreshRuntimeStatus, 400);
+}
+
 $("runNow").addEventListener("click", async () => {
-  const button = $("runNow");
-  button.disabled = true;
-  button.textContent = "Resyncing…";
+  requestPending = true;
+  renderRunButton({ running: true });
+  startStatusPolling();
 
   try {
     const result = await browser.runtime.sendMessage({ type: "GOREECLOUD_RUN_NOW" });
@@ -47,10 +79,17 @@ $("runNow").addEventListener("click", async () => {
   } catch (error) {
     $("status").textContent = error?.message || String(error);
   } finally {
-    button.disabled = false;
-    button.textContent = "Resync all now";
+    requestPending = false;
+    await refreshRuntimeStatus();
   }
 });
 
 browser.storage.onChanged.addListener(() => load());
+
+window.addEventListener("unload", () => {
+  if (statusPoll) clearInterval(statusPoll);
+});
+
 load();
+refreshRuntimeStatus();
+startStatusPolling();
