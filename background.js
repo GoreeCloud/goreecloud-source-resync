@@ -1,18 +1,10 @@
 const DEFAULTS = {
-  enabled: false,
-  intervalMinutes: 5,
-  projectUrl: "",
-  openTabWhenNeeded: true,
-  closeAutoOpenedTab: true,
   lastRunAt: null,
   lastResult: null,
   runHistory: []
 };
 
-const ALARM_NAME = "goreecloud-source-resync";
 let runInProgress = false;
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getSettings() {
   return { ...DEFAULTS, ...(await browser.storage.local.get(DEFAULTS)) };
@@ -29,18 +21,6 @@ function validSourcesUrl(url) {
   }
 }
 
-async function scheduleFromSettings() {
-  const settings = await getSettings();
-  await browser.alarms.clear(ALARM_NAME);
-  if (!settings.enabled || !validSourcesUrl(settings.projectUrl)) return;
-
-  const interval = Math.max(5, Number(settings.intervalMinutes) || 5);
-  await browser.alarms.create(ALARM_NAME, {
-    delayInMinutes: interval,
-    periodInMinutes: interval
-  });
-}
-
 async function recordResult(result) {
   const settings = await getSettings();
   const timestamp = new Date().toISOString();
@@ -53,76 +33,7 @@ async function recordResult(result) {
   });
 }
 
-async function waitForTabComplete(tabId, timeoutMs = 30000) {
-  const existing = await browser.tabs.get(tabId).catch(() => null);
-  if (existing?.status === "complete") return;
-
-  await new Promise((resolve, reject) => {
-    let finished = false;
-    const timer = setTimeout(() => finish(new Error("Timed out waiting for the Sources page to load.")), timeoutMs);
-
-    function finish(error) {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      browser.tabs.onUpdated.removeListener(onUpdated);
-      error ? reject(error) : resolve();
-    }
-
-    function onUpdated(updatedTabId, changeInfo) {
-      if (updatedTabId === tabId && changeInfo.status === "complete") finish();
-    }
-
-    browser.tabs.onUpdated.addListener(onUpdated);
-  });
-}
-
-async function getSourceStatus(tabId) {
-  try {
-    return await browser.tabs.sendMessage(tabId, { type: "GOREECLOUD_SOURCE_STATUS" });
-  } catch {
-    return null;
-  }
-}
-
-async function warmSourceTab(tab) {
-  if (!tab?.id) return;
-
-  const initial = await getSourceStatus(tab.id);
-  if (initial?.count > 0) return;
-
-  const [previousActive] = await browser.tabs.query({ active: true, currentWindow: true });
-  const shouldRestore = previousActive?.id && previousActive.id !== tab.id;
-
-  if (shouldRestore) {
-    await browser.tabs.update(tab.id, { active: true });
-  }
-
-  try {
-    const deadline = Date.now() + 8000;
-    let stableCount = 0;
-    let lastCount = -1;
-
-    while (Date.now() < deadline) {
-      const status = await getSourceStatus(tab.id);
-      const count = status?.count || 0;
-      if (count > 0 && count === lastCount) {
-        stableCount += 1;
-        if (stableCount >= 2) return;
-      } else {
-        stableCount = count > 0 ? 1 : 0;
-        lastCount = count;
-      }
-      await sleep(500);
-    }
-  } finally {
-    if (shouldRestore) {
-      await browser.tabs.update(previousActive.id, { active: true }).catch(() => {});
-    }
-  }
-}
-
-async function sendResync(tabId, reason = "manual") {
+async function sendResync(tabId) {
   if (runInProgress) {
     return {
       ok: false,
@@ -131,29 +42,17 @@ async function sendResync(tabId, reason = "manual") {
       failures: [],
       message: "A resync run is already in progress.",
       durationMs: 0,
-      reason
+      reason: "manual"
     };
   }
 
   runInProgress = true;
   const startedAt = Date.now();
   try {
-    let response;
-    let attempts = 0;
-
-    while (attempts < 10) {
-      attempts += 1;
-      try {
-        response = await browser.tabs.sendMessage(tabId, {
-          type: "GOREECLOUD_RESYNC_ALL",
-          reason
-        });
-        if (response) break;
-      } catch (error) {
-        if (attempts >= 10) throw error;
-      }
-      await sleep(750);
-    }
+    const response = await browser.tabs.sendMessage(tabId, {
+      type: "GOREECLOUD_RESYNC_ALL",
+      reason: "manual"
+    });
 
     const result = {
       ok: Boolean(response?.ok),
@@ -162,9 +61,21 @@ async function sendResync(tabId, reason = "manual") {
       failures: response?.failures || [],
       message: response?.message || "No result returned.",
       durationMs: Date.now() - startedAt,
-      reason
+      reason: "manual"
     };
 
+    await recordResult(result);
+    return result;
+  } catch (error) {
+    const result = {
+      ok: false,
+      count: 0,
+      total: 0,
+      failures: [],
+      message: error?.message || String(error),
+      durationMs: Date.now() - startedAt,
+      reason: "manual"
+    };
     await recordResult(result);
     return result;
   } finally {
@@ -172,107 +83,42 @@ async function sendResync(tabId, reason = "manual") {
   }
 }
 
-async function findTargetTab(projectUrl) {
-  const normalizedUrl = projectUrl.split("#")[0];
-  const tabs = await browser.tabs.query({ url: "https://chatgpt.com/*" });
-  return tabs.find(t => (t.url || "").split("#")[0] === normalizedUrl)
-    || tabs.find(t => validSourcesUrl(t.url || ""))
-    || null;
-}
-
-async function runScheduledResync() {
-  const settings = await getSettings();
-  if (!settings.enabled || !validSourcesUrl(settings.projectUrl)) return;
-
-  let tab = await findTargetTab(settings.projectUrl);
-  let autoOpened = false;
-
-  try {
-    if (!tab && settings.openTabWhenNeeded) {
-      tab = await browser.tabs.create({ url: settings.projectUrl, active: false });
-      autoOpened = true;
-      await waitForTabComplete(tab.id);
-      await sleep(1000);
-    }
-
-    if (!tab) {
-      await recordResult({
-        ok: false,
-        count: 0,
-        total: 0,
-        failures: [],
-        message: "No matching ChatGPT Sources tab was open.",
-        durationMs: 0,
-        reason: "scheduled"
-      });
-      return;
-    }
-
-    await warmSourceTab(tab);
-    await sendResync(tab.id, "scheduled");
-  } catch (error) {
-    await recordResult({
-      ok: false,
-      count: 0,
-      total: 0,
-      failures: [],
-      message: error?.message || String(error),
-      durationMs: 0,
-      reason: "scheduled"
-    });
-  } finally {
-    if (autoOpened && settings.closeAutoOpenedTab && tab?.id) {
-      await sleep(1500);
-      await browser.tabs.remove(tab.id).catch(() => {});
-    }
-  }
-}
-
 async function getRuntimeStatus() {
-  const settings = await getSettings();
-  const alarm = await browser.alarms.get(ALARM_NAME);
   return {
     ok: true,
     running: runInProgress,
-    nextRunAt: alarm?.scheduledTime ? new Date(alarm.scheduledTime).toISOString() : null,
-    settings
+    settings: await getSettings()
   };
 }
 
 browser.runtime.onInstalled.addListener(async () => {
   const existing = await browser.storage.local.get();
   await browser.storage.local.set({ ...DEFAULTS, ...existing });
-  await scheduleFromSettings();
-});
-
-browser.runtime.onStartup.addListener(scheduleFromSettings);
-
-browser.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === ALARM_NAME) runScheduledResync();
+  await browser.storage.local.remove([
+    "enabled",
+    "intervalMinutes",
+    "projectUrl",
+    "openTabWhenNeeded",
+    "closeAutoOpenedTab"
+  ]);
 });
 
 browser.runtime.onMessage.addListener(async message => {
-  if (message?.type === "GOREECLOUD_SETTINGS_CHANGED") {
-    await scheduleFromSettings();
-    return getRuntimeStatus();
-  }
   if (message?.type === "GOREECLOUD_GET_STATUS") {
     return getRuntimeStatus();
   }
+
   if (message?.type === "GOREECLOUD_RUN_NOW") {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !validSourcesUrl(tab.url || "")) {
-      return { ok: false, message: "Open the saved ChatGPT Project Sources page first." };
+      return {
+        ok: false,
+        count: 0,
+        total: 0,
+        failures: [],
+        message: "Open a ChatGPT Project Sources page first."
+      };
     }
-    return sendResync(tab.id, "popup");
-  }
-  if (message?.type === "GOREECLOUD_CAPTURE_CURRENT_URL") {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!validSourcesUrl(tab?.url || "")) {
-      return { ok: false, message: "Open a ChatGPT Project Sources page first." };
-    }
-    await browser.storage.local.set({ projectUrl: tab.url });
-    await scheduleFromSettings();
-    return { ok: true, projectUrl: tab.url };
+    return sendResync(tab.id);
   }
 });

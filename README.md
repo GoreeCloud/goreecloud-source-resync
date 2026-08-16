@@ -1,24 +1,20 @@
 # GoreeCloud Source Resync
 
-GoreeCloud Source Resync is a Firefox extension that adds one-click and scheduled resynchronization for resyncable Google Drive sources attached to a ChatGPT Project.
+GoreeCloud Source Resync is a Firefox extension that manually resynchronizes all resyncable Google Drive sources attached to the currently open ChatGPT Project Sources page.
 
 ## Status
 
-**Stable v1.0.0**
+**Stable manual workflow**
 
-Validated on August 15, 2026 against the GoreeCloud ChatGPT Project Sources page with 18 configured Google Drive folder sources. Manual resync and the five-minute automatic interval both completed their expected request sequence successfully.
+The supported workflow is intentionally manual. Automatic and time-based resync were removed because ChatGPT's Sources interface does not remain reliably interactive in inactive Firefox tabs. Manual **Resync all** works while the desired Sources page is open and active.
 
 ## Features
 
-- Resync all Google Drive Project sources with one click.
+- Resync all Google Drive Project sources with one click from the Firefox popup.
 - Add an in-page **Resync all** button to ChatGPT Project Sources pages.
-- Automatically request resync every 5, 10, 15, 30, or 60 minutes.
-- Save one ChatGPT Project Sources URL.
-- Reuse an open Sources tab when available.
-- Optionally open the saved Sources page in an inactive background tab.
-- Optionally close a tab opened automatically by the extension.
-- Show last-run mode, count, duration, failures, timestamp, and next scheduled run.
-- Retain a bounded local history of the 10 most recent runs.
+- Show last-run requested-source count, duration, failures, and timestamp.
+- Retain a bounded local history of the 10 most recent manual runs.
+- Operate only against the currently active ChatGPT Project Sources page.
 
 ## Continuous integration
 
@@ -35,7 +31,7 @@ The validation workflow uses read-only repository permissions.
 
 ## Release packaging
 
-The packaging workflow runs for semantic-version tags such as `v1.0.0` and can also be started manually for an existing release tag.
+The packaging workflow runs for semantic-version tags such as `v1.1.0` and can also be started manually for an existing release tag.
 
 For release builds, the workflow checks out the exact requested tag, requires the tag version to match `manifest.json`, and creates:
 
@@ -51,9 +47,8 @@ The workflow packages an **unsigned** XPI. Firefox Add-ons signing remains a sep
 
 ## Firefox permissions
 
-- `alarms`: schedules automatic runs.
-- `storage`: stores non-sensitive extension settings and bounded run metadata.
-- `tabs`: locates, opens, and optionally closes the configured Sources tab.
+- `storage`: stores non-sensitive bounded manual-run metadata.
+- `tabs`: identifies the currently active ChatGPT Sources tab and sends the manual resync request to it.
 - `https://chatgpt.com/*`: allows the content script to operate only on ChatGPT pages.
 
 The extension does not request Google Drive access and does not store ChatGPT or Google credentials.
@@ -62,16 +57,15 @@ The extension does not request Google Drive access and does not store ChatGPT or
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. Choose **Load Temporary Add-on**.
-3. Select this repository's `manifest.json`.
-4. Open the desired ChatGPT Project **Sources** page.
-5. Open the extension popup and select **Use current Sources page**.
-6. Test **Resync all now** before enabling an automatic interval.
+3. Select this repository's `manifest.json` or the packaged XPI.
+4. Open the desired ChatGPT Project **Sources** page and keep that tab active.
+5. Open the extension popup and select **Resync all now**, or use the in-page **Resync all** button.
 
 Temporary extensions are removed when Firefox exits. A signed release is required for normal persistent installation in standard Firefox builds.
 
 ## Reliability boundary
 
-The extension automates ChatGPT's rendered **Resync** menu action. It does not call an undocumented or private ChatGPT API. As a result, a future ChatGPT interface change can require an update to the DOM-detection logic.
+The extension automates ChatGPT's rendered **Resync** menu action. It does not call an undocumented or private ChatGPT API. The active Sources page must therefore be rendered and interactive, and a future ChatGPT interface change can require an update to the DOM-detection logic.
 
 ## License
 

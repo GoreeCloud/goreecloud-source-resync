@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "GoreeCloud Source Resync",
-  "version": "1.0.2",
-  "description": "Resync all resyncable ChatGPT Project Google Drive sources at once or on a configurable interval.",
-  "permissions": ["alarms", "storage", "tabs"],
+  "version": "1.1.0",
+  "description": "Manually resync all resyncable ChatGPT Project Google Drive sources with one action.",
+  "permissions": ["storage", "tabs"],
   "host_permissions": ["https://chatgpt.com/*"],
   "background": {
     "scripts": ["background.js"]
