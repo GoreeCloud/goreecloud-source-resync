@@ -1,21 +1,12 @@
 (() => {
   const STATE = { running: false, floatingButton: null };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const SOURCE_READY_TIMEOUT_MS = 45000;
-  const SOURCE_STABLE_POLLS = 3;
 
   function isVisible(el) {
     if (!(el instanceof Element)) return false;
     const style = getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
-  }
-
-  function isUsableElement(el) {
-    if (!(el instanceof Element)) return false;
-    if (el.hidden || el.getAttribute("aria-hidden") === "true") return false;
-    const style = getComputedStyle(el);
-    return style.display !== "none" && style.visibility !== "hidden";
   }
 
   function isSourcesPage() {
@@ -27,17 +18,17 @@
 
   function sourceMarkerElements() {
     return [...document.querySelectorAll("body *")].filter(el => {
-      if (!isUsableElement(el) || el.children.length > 3) return false;
+      if (!isVisible(el) || el.children.length > 3) return false;
       return /Google Drive (Folder|File)/i.test((el.textContent || "").trim());
     });
   }
 
   function findCardFromMarker(marker) {
     let node = marker;
-    for (let depth = 0; depth < 10 && node; depth += 1, node = node.parentElement) {
-      const buttons = [...node.querySelectorAll("button")].filter(isUsableElement);
-      const text = (node.textContent || "").trim();
-      if (buttons.length > 0 && /Google Drive (Folder|File)/i.test(text)) return node;
+    for (let depth = 0; depth < 8 && node; depth += 1, node = node.parentElement) {
+      const rect = node.getBoundingClientRect();
+      const buttons = [...node.querySelectorAll("button")].filter(isVisible);
+      if (rect.width > 300 && rect.height >= 35 && rect.height <= 160 && buttons.length > 0) return node;
     }
     return null;
   }
@@ -49,41 +40,15 @@
       const card = findCardFromMarker(marker);
       if (!card || seen.has(card)) continue;
       seen.add(card);
-      const rawText = card.innerText || card.textContent || "";
-      const lines = rawText.split("\n").map(v => v.trim()).filter(Boolean);
+      const lines = (card.innerText || "").split("\n").map(v => v.trim()).filter(Boolean);
       const name = lines.find(v => !/^Google Drive (Folder|File)/i.test(v) && !/^Last synced/i.test(v) && v !== "Syncing") || "Google Drive source";
       cards.push({ card, name });
     }
     return cards;
   }
 
-  async function waitForSourceCards(timeoutMs = SOURCE_READY_TIMEOUT_MS) {
-    const startedAt = Date.now();
-    let lastCount = -1;
-    let stablePolls = 0;
-
-    while (Date.now() - startedAt < timeoutMs) {
-      if (!isSourcesPage()) return [];
-
-      const cards = findSourceCards();
-      const count = cards.length;
-
-      if (count > 0 && count === lastCount) {
-        stablePolls += 1;
-        if (stablePolls >= SOURCE_STABLE_POLLS) return cards;
-      } else {
-        stablePolls = count > 0 ? 1 : 0;
-        lastCount = count;
-      }
-
-      await sleep(500);
-    }
-
-    return findSourceCards();
-  }
-
   function menuButtonForCard(card) {
-    const buttons = [...card.querySelectorAll("button")].filter(isUsableElement);
+    const buttons = [...card.querySelectorAll("button")].filter(isVisible);
     const scored = buttons.map(button => {
       const aria = (button.getAttribute("aria-label") || "").toLowerCase();
       const title = (button.getAttribute("title") || "").toLowerCase();
@@ -91,15 +56,16 @@
       let score = 0;
       if (/more|menu|options|actions/.test(`${aria} ${title}`)) score += 5;
       if (text === "…" || text === "⋯" || text === "...") score += 4;
-      if (isVisible(button)) score += 1;
+      const rect = button.getBoundingClientRect();
+      if (rect.width <= 48 && rect.height <= 48) score += 1;
       return { button, score };
     }).sort((a, b) => b.score - a.score);
     return scored[0]?.button || buttons.at(-1) || null;
   }
 
-  function resyncControl() {
+  function visibleResyncControl() {
     const selectors = ["[role='menuitem']", "[role='option']", "button", "a", "div[tabindex='0']"];
-    const candidates = [...document.querySelectorAll(selectors.join(","))].filter(isUsableElement);
+    const candidates = [...document.querySelectorAll(selectors.join(","))].filter(isVisible);
     return candidates.find(el => /^resync$/i.test((el.textContent || "").trim())) || null;
   }
 
@@ -108,9 +74,9 @@
     if (!menuButton) throw new Error("Could not find the source menu button.");
 
     menuButton.click();
-    for (let i = 0; i < 30; i += 1) {
-      await sleep(125);
-      const resync = resyncControl();
+    for (let i = 0; i < 24; i += 1) {
+      await sleep(100);
+      const resync = visibleResyncControl();
       if (resync) {
         resync.click();
         await sleep(300);
@@ -130,17 +96,9 @@
     const failures = [];
     let count = 0;
     try {
-      const initial = await waitForSourceCards();
+      const initial = findSourceCards();
       const names = initial.map(item => item.name);
-      if (!names.length) {
-        return {
-          ok: false,
-          count: 0,
-          total: 0,
-          failures: [],
-          message: "The Sources page loaded, but Google Drive sources did not finish rendering within 45 seconds."
-        };
-      }
+      if (!names.length) return { ok: false, count: 0, total: 0, failures: [], message: "No Google Drive sources were found on this page." };
 
       for (let index = 0; index < names.length; index += 1) {
         const sourceName = names[index];
