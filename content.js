@@ -215,9 +215,6 @@
   }
 
   browser.runtime.onMessage.addListener(async message => {
-    if (message?.type === "GOREECLOUD_SOURCE_STATUS") {
-      return { ok: true, isSourcesPage: isSourcesPage(), count: findSourceCards().length, hidden: document.hidden };
-    }
     if (message?.type === "GOREECLOUD_RESYNC_ALL") {
       if (!isSourcesPage()) return { ok: false, count: 0, total: 0, failures: [], message: "The active ChatGPT page is not a Project Sources page." };
       return resyncAll();
