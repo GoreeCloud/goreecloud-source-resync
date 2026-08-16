@@ -14,6 +14,18 @@
 ### Changed
 - The packaging workflow now uses GitHub's short-lived workflow token with `contents: write` only for release-asset publication and replaces same-name release assets during a controlled retry.
 
+## 1.1.1 — 2026-08-15
+
+Corrected a manual-resync regression introduced while experimenting with inactive-tab support.
+
+### Fixed
+- Restored the foreground DOM visibility and source-card selection logic from the previously validated manual-resync implementation.
+- Restored visible menu-button and visible **Resync** action detection.
+- Removed the 45-second source-readiness wait that was unnecessary for manual-only operation and could leave the control showing **Resyncing…** without issuing source refreshes.
+
+### Reliability
+- Manual resync is the supported workflow and is intended to be run while the desired ChatGPT Project Sources page is visible and active.
+
 ## 1.1.0 — 2026-08-15
 
 Focused GoreeCloud Source Resync on the reliable manual workflow after inactive-tab testing showed that ChatGPT's Sources interface does not remain consistently interactive for scheduled background automation.
